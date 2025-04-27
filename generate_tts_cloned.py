@@ -85,8 +85,8 @@ def generate_cloned_tts(text_to_speak, output_filename, reference_wav, model_nam
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a WAV file from text using voice cloning.")
-    parser.add_argument("-t", "--text", default=DEFAULT_TEXT,
-                        help=f"Text to convert to speech (default: '{DEFAULT_TEXT}')")
+    parser.add_argument("text",
+                        help="Text to convert to speech (use quotes if it contains spaces).")
     parser.add_argument("-o", "--output", default=DEFAULT_OUTPUT_FILE,
                         help=f"Output WAV file name (default: '{DEFAULT_OUTPUT_FILE}')")
     parser.add_argument("-r", "--reference", default=DEFAULT_REFERENCE_VOICE,
