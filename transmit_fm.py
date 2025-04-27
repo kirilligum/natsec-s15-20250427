@@ -257,6 +257,21 @@ def transmit_audio(audio_file, sdr_uri=SDR_URI, center_freq=CENTER_FREQ,
                  print("SDR object released.")
         else:
             print("SDR not initialized, no cleanup needed.")
+        return transmission_successful # Return status
+
+# --- Main Execution Logic (when run as script) ---
+def main():
+    """Parses arguments and runs the transmission when script is executed directly."""
+    # Basic execution using defaults defined at the top of the file
+    # More complex argparse could be added here if needed for direct execution flexibility
+    print("--- Running FM Transmitter Script ---")
+    if transmit_audio(AUDIO_FILE):
+         print("Script finished successfully.")
+    else:
+         print("Script finished with errors.")
+         import sys
+         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
