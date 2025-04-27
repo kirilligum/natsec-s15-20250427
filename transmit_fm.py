@@ -26,11 +26,33 @@ FM_DEVIATION = 5e3       # FM deviation (e.g., 5 kHz for narrowband FM)
 AUDIO_TARGET_RATE = 48e3 # Intermediate audio rate before final resampling
 CHUNK_SIZE = 8192        # Number of samples per transmission chunk
 
-# --- Main Transmission Logic ---
-def main():
-    print("--- FM Voice Transmitter ---")
-    print(f"Audio file: {AUDIO_FILE}")
-    print(f"Frequency: {CENTER_FREQ / 1e6:.3f} MHz")
+# --- Transmission Function ---
+def transmit_audio(audio_file, sdr_uri=SDR_URI, center_freq=CENTER_FREQ,
+                   sample_rate=SAMPLE_RATE, tx_gain=TX_GAIN,
+                   fm_deviation=FM_DEVIATION, audio_target_rate=AUDIO_TARGET_RATE,
+                   chunk_size=CHUNK_SIZE):
+    """
+    Reads an audio file, performs FM modulation, and transmits it using PlutoSDR.
+
+    Args:
+        audio_file (str): Path to the input WAV file.
+        sdr_uri (str): URI of the PlutoSDR device.
+        center_freq (float): Center frequency for transmission in Hz.
+        sample_rate (float): Sample rate for the SDR in Hz.
+        tx_gain (int): Transmission gain in dB.
+        fm_deviation (float): FM frequency deviation in Hz.
+        audio_target_rate (float): Intermediate sample rate for audio before SDR resampling.
+        chunk_size (int): Number of samples per transmission chunk.
+
+    Returns:
+        bool: True if transmission was successful (or finished), False otherwise.
+    """
+    print("--- FM Voice Transmission ---")
+    print(f"Audio file: {audio_file}")
+    print(f"Frequency: {center_freq / 1e6:.3f} MHz")
+    print(f"Sample Rate: {sample_rate / 1e3:.0f} kHz")
+    print(f"FM Deviation: {fm_deviation / 1e3:.1f} kHz")
+    print(f"TX Gain: {tx_gain} dB")
     print(f"Sample Rate: {SAMPLE_RATE / 1e3:.0f} kHz")
     print(f"FM Deviation: {FM_DEVIATION / 1e3:.1f} kHz")
     print(f"TX Gain: {TX_GAIN} dB")
@@ -39,14 +61,14 @@ def main():
 
     # 1. Read Audio File
     try:
-        fs_audio, audio_data = wavfile.read(AUDIO_FILE)
+        fs_audio, audio_data = wavfile.read(audio_file)
         print(f"Read audio file: Sample rate {fs_audio} Hz, Duration {len(audio_data)/fs_audio:.2f}s")
     except FileNotFoundError:
-        print(f"Error: Audio file '{AUDIO_FILE}' not found.")
-        return
+        print(f"Error: Audio file '{audio_file}' not found.")
+        return False
     except Exception as e:
         print(f"Error reading audio file: {e}")
-        return
+        return False
 
     # 2. Preprocess Audio
     # Convert to mono if stereo
@@ -91,16 +113,16 @@ def main():
 
     # Resample audio to the target rate for modulation
     # Use integer up/down factors for resample_poly for better quality
-    gcd = math.gcd(int(AUDIO_TARGET_RATE), int(fs_audio))
-    up = int(AUDIO_TARGET_RATE) // gcd
+    gcd = math.gcd(int(audio_target_rate), int(fs_audio))
+    up = int(audio_target_rate) // gcd
     down = int(fs_audio) // gcd
-    print(f"Resampling audio from {fs_audio} Hz to {AUDIO_TARGET_RATE} Hz (up={up}, down={down})...")
+    print(f"Resampling audio from {fs_audio} Hz to {audio_target_rate} Hz (up={up}, down={down})...")
     try:
         audio_resampled = resample_poly(audio_data, up, down)
     except Exception as e:
         print(f"Error during audio resampling: {e}")
-        return
-    fs_resampled = AUDIO_TARGET_RATE
+        return False
+    fs_resampled = audio_target_rate
     print("Audio resampling complete.")
 
     # Normalize again after resampling
@@ -113,7 +135,7 @@ def main():
     # 3. FM Modulation
     print("Performing FM modulation...")
     # Calculate sensitivity factor (radians per sample per unit of input)
-    sensitivity = 2.0 * np.pi * FM_DEVIATION / fs_resampled
+    sensitivity = 2.0 * np.pi * fm_deviation / fs_resampled
     # Integrate audio signal for phase modulation
     phase = sensitivity * np.cumsum(audio_resampled)
     # Generate complex FM signal e^(j*phase)
@@ -121,15 +143,15 @@ def main():
     print("FM modulation complete.")
 
     # 4. Resample FM signal to SDR sample rate
-    gcd_sdr = math.gcd(int(SAMPLE_RATE), int(fs_resampled))
-    up_sdr = int(SAMPLE_RATE) // gcd_sdr
+    gcd_sdr = math.gcd(int(sample_rate), int(fs_resampled))
+    up_sdr = int(sample_rate) // gcd_sdr
     down_sdr = int(fs_resampled) // gcd_sdr
-    print(f"Resampling FM signal from {fs_resampled} Hz to {SAMPLE_RATE} Hz (up={up_sdr}, down={down_sdr})...")
+    print(f"Resampling FM signal from {fs_resampled} Hz to {sample_rate} Hz (up={up_sdr}, down={down_sdr})...")
     try:
         fm_signal_sdr = resample_poly(fm_signal, up_sdr, down_sdr)
     except Exception as e:
         print(f"Error during FM signal resampling: {e}")
-        return
+        return False
     print("FM signal resampling complete.")
 
     # Scale signal amplitude for SDR DAC
@@ -141,18 +163,19 @@ def main():
 
     # 5. Initialize and Configure SDR
     sdr = None # Initialize sdr to None for cleanup check
+    transmission_successful = False
     try:
-        print(f"Connecting to PlutoSDR at {SDR_URI}...")
-        sdr = adi.Pluto(uri=SDR_URI)
+        print(f"Connecting to PlutoSDR at {sdr_uri}...")
+        sdr = adi.Pluto(uri=sdr_uri)
         print("PlutoSDR connected.")
 
         # Configure SDR parameters
-        sdr.sample_rate = int(SAMPLE_RATE)
-        sdr.tx_lo = int(CENTER_FREQ)
-        sdr.tx_hardwaregain_chan0 = TX_GAIN
+        sdr.sample_rate = int(sample_rate)
+        sdr.tx_lo = int(center_freq)
+        sdr.tx_hardwaregain_chan0 = tx_gain
         sdr.tx_cyclic_buffer = False # We'll send chunks manually
 
-        # Ensure buffer is destroyed before potential use
+        # Ensure buffer is destroyed before potential use (might not exist)
         try:
              sdr.tx_destroy_buffer()
         except Exception as buf_e:
@@ -170,13 +193,13 @@ def main():
         print("Verify the IP address if using network mode.")
         print("Check if libiio and pyadi-iio drivers/libraries are correctly installed.")
         if sdr: del sdr # Attempt cleanup if object exists partially
-        return
+        return False # Indicate failure
 
     # 6. Transmit Data
     total_samples = len(fm_signal_sdr)
-    num_chunks = math.ceil(total_samples / CHUNK_SIZE)
+    num_chunks = math.ceil(total_samples / chunk_size)
     print(f"Starting transmission of {total_samples} samples in {num_chunks} chunks...")
-    print(f"Chunk size: {CHUNK_SIZE} samples")
+    print(f"Chunk size: {chunk_size} samples")
 
     try:
         # Enable TX channel 0
@@ -184,12 +207,12 @@ def main():
 
         start_time = time.time()
         for i in range(num_chunks):
-            start_idx = i * CHUNK_SIZE
-            end_idx = min((i + 1) * CHUNK_SIZE, total_samples)
+            start_idx = i * chunk_size
+            end_idx = min((i + 1) * chunk_size, total_samples)
             chunk = fm_signal_sdr[start_idx:end_idx]
 
             # The pyadi library usually handles padding the last chunk if needed,
-            # but ensure CHUNK_SIZE is adequate (e.g., > 1024 and multiple of 4).
+            # but ensure chunk_size is adequate (e.g., > 1024 and multiple of 4).
             if len(chunk) == 0:
                 print("Warning: Generated empty chunk, skipping.")
                 continue
@@ -211,9 +234,11 @@ def main():
         time.sleep(0.5)
         end_time = time.time()
         print(f"Transmission finished in {end_time - start_time:.2f} seconds.")
+        transmission_successful = True # Mark as finished
 
     except Exception as e:
         print(f"Error during transmission loop: {e}")
+        transmission_successful = False # Mark as failed
     finally:
         # 7. Cleanup
         if sdr:
