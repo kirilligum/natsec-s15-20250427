@@ -20,7 +20,7 @@ import math
 AUDIO_FILE = "output.wav"
 SDR_URI = "ip:192.168.2.1"  # Default Pluto IP. Change if needed.
 CENTER_FREQ = 440.135e6  # Target frequency (440.135 MHz)
-SAMPLE_RATE = 240e3      # SDR sample rate (e.g., 240 kHz)
+SAMPLE_RATE = 1e6        # SDR sample rate (e.g., 1 MHz - must be >= 521e3)
 TX_GAIN = -10            # TX gain in dB (Start low, e.g., -30 to -10)
 FM_DEVIATION = 5e3       # FM deviation (e.g., 5 kHz for narrowband FM)
 AUDIO_TARGET_RATE = 48e3 # Intermediate audio rate before final resampling
